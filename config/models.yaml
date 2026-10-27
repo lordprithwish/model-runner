@@ -1,0 +1,16 @@
+models:
+  - id: sdxl-placeholder
+    name: Image model placeholder
+    task: image
+    adapter: diffusers_image
+    enabled: false
+    model_id: ""
+    notes: "Replace with a supported image model/pipeline."
+
+  - id: wan2.2-ti2v-5b
+    name: Wan2.2 TI2V 5B
+    task: video
+    adapter: wan_ti2v
+    enabled: true
+    model_id: Wan-AI/Wan2.2-TI2V-5B-Diffusers
+    notes: "Text-to-video, or image-to-video when `image` is sent. 720p (1280x704), 121 frames @ 24fps."
