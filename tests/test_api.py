@@ -8,6 +8,7 @@ from app.services.runner import registry
 
 def test_api():
     with TestClient(app) as client:
+        assert client.get("/").json() == {"message": "Hello from Model Runner"}
         assert client.get("/health").json() == {"status": "ok"}
         assert {m["id"] for m in client.get("/v1/models").json()} == {"sdxl-placeholder", "wan2.2-ti2v-5b"}
 

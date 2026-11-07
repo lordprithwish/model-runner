@@ -20,6 +20,11 @@ settings.outputs_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/outputs", StaticFiles(directory=settings.outputs_dir), name="outputs")
 
 
+@app.get("/")
+def root():
+    return {"message": f"Hello from {settings.app_name}"}
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
