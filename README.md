@@ -125,6 +125,19 @@ journalctl -u model-runner -f              # follow the logs
 sudo systemctl restart model-runner        # after a git pull or a .env change
 ```
 
+### Option 3: Docker
+
+Needs the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) on the host.
+
+```bash
+docker compose up -d --build    # builds with GPU deps, binds to 127.0.0.1:8000
+docker compose logs -f          # follow the logs
+docker compose down             # stop
+```
+
+Videos go to `./outputs`, model weights to the `hf-cache` volume, and `.env` is read if present.
+For an API-only image without a GPU: `docker build --build-arg GPU=0 -t model-runner:api .`
+
 ### Updating
 
 ```bash

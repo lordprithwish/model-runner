@@ -1,0 +1,22 @@
+services:
+  model-runner:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000" # localhost only; see README section 5 before exposing
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./outputs:/app/outputs
+      - hf-cache:/cache/huggingface # model weights survive rebuilds
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility] # utility = nvidia-smi for /v1/stats/gpu
+
+volumes:
+  hf-cache:
