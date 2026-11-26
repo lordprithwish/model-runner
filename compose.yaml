@@ -1,22 +1,42 @@
+# Fixed name: volumes are keyed by it, so the model cache survives a folder rename.
+name: model-runner
+
 services:
-  model-runner:
-    build: .
-    ports:
-      - "127.0.0.1:8000:8000" # localhost only; see README section 5 before exposing
+  server:
+    # REGISTRY/TAG come from Jenkins (the host pulls what it pushed); locally they default to a throwaway name.
+    image: ${REGISTRY:-model-runner}/server:${TAG:-local}
+    build:
+      context: .
+      labels: [model-runner.app=true] # lets cleanup prune only this project's images
+    restart: unless-stopped
+    # Same keys as .env.example. On the host this is ./.env, which also holds REGISTRY/TAG.
     env_file:
       - path: .env
         required: false
+    ports:
+      # The API has no auth. Production reaches it through an SSH tunnel to the GPU host's
+      # 127.0.0.1:8000, so keep the loopback default. Changing BIND_ADDR breaks that tunnel.
+      # Never 0.0.0.0: Docker-published ports bypass ufw, so a firewall rule would not protect it.
+      - "${BIND_ADDR:-127.0.0.1}:8000:8000"
     volumes:
       - ./outputs:/app/outputs
-      - hf-cache:/cache/huggingface # model weights survive rebuilds
-    restart: unless-stopped
+      - hf-cache:/cache/huggingface # model weights survive redeploys
+    # The slim python image has no curl, so python itself asks.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [gpu, utility] # utility = nvidia-smi for /v1/stats/gpu
+              # Everything after gpu becomes NVIDIA_DRIVER_CAPABILITIES, so list both:
+              # compute = CUDA for torch, utility = nvidia-smi for /v1/stats/gpu.
+              capabilities: [gpu, compute, utility]
 
 volumes:
   hf-cache:
+    name: model-runner-hf-cache # already exists on the GPU host with the weights; without this Compose makes model-runner_hf-cache
