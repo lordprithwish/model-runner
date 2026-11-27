@@ -163,19 +163,35 @@ Queued and running jobs are lost on restart. Finished videos in `outputs/` stay 
 
 ### Option A: SSH tunnel (recommended, no port is opened)
 
-On the server, bind to localhost only:
+The server listens on its own `127.0.0.1:8000` only, so nothing is reachable from the network.
+SSH forwards port 8000 on your computer to that port on the server.
+
+**1. On the server**, start it bound to localhost (pick one):
 
 ```bash
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+docker compose up -d --build                                # Docker: already binds 127.0.0.1:8000
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000    # without Docker (use tmux/systemd from section 4 to keep it running)
 ```
 
-On your own computer:
+Check it from the server: `curl localhost:8000/health` should return `{"status":"ok"}`.
+
+**2. On your own computer**, open the tunnel with one of these:
 
 ```bash
+# Foreground: holds the terminal. Press Ctrl+C (or close the terminal) to close the tunnel.
 ssh -N -L 8000:localhost:8000 YOUR_USER@SERVER_IP
+
+# Background: returns your prompt right away and keeps the tunnel open.
+ssh -fN -o ExitOnForwardFailure=yes -L 8000:localhost:8000 YOUR_USER@SERVER_IP
+# close it later with:
+pkill -f '8000:localhost:8000'
 ```
 
-Now open http://localhost:8000/docs on your computer. To close it, press Ctrl+C in the ssh terminal.
+**3.** Open http://localhost:8000/docs on your computer.
+
+- `-N` opens no remote shell, only the tunnel. `-f` sends ssh to the background after you log in.
+- `ExitOnForwardFailure=yes` makes the background ssh exit with an error if port 8000 is already taken on your computer, instead of running silently without a tunnel.
+- If port 8000 is busy on your computer, use another local port: `-L 9000:localhost:8000`, then open http://localhost:9000/docs (and use `pkill -f '9000:localhost:8000'`).
 
 ### Option B: firewall (ufw)
 
