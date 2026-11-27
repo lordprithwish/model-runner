@@ -28,28 +28,60 @@ class DiffusersImageAdapter:
         raise NotImplementedError("Image generation is not configured yet. Implement DiffusersImageAdapter.")
 
 
-class WanTI2VAdapter:
-    """Wan2.2-TI2V-5B: text-to-video, or image-to-video when an image is given."""
+class WanAdapter:
+    """Wan2.2 video. One checkpoint, one or both modes (TI2V-5B does both from shared weights)."""
+
+    # ponytail: one video model resident at a time; switching models reloads weights (minutes).
+    # Keep several loaded only if the GPU and RAM can hold them all.
+    _active: "WanAdapter | None" = None
 
     def __init__(self, info: ModelInfo) -> None:
         self.info = info
         self._t2v = None
         self._i2v = None
+        self.offload = settings.cpu_offload if info.cpu_offload is None else info.cpu_offload
 
     @property
     def loaded(self) -> bool:
-        return self._t2v is not None
+        return self._t2v is not None or self._i2v is not None
 
-    def _load(self) -> None:
+    def _pipelines(self) -> tuple[Any, Any, dict[str, Any]]:
+        """(text-to-video class, image-to-video class, from_pretrained kwargs)."""
         import torch
         from diffusers import AutoencoderKLWan, WanImageToVideoPipeline, WanPipeline
 
         vae = AutoencoderKLWan.from_pretrained(self.info.model_id, subfolder="vae", dtype=torch.float32)
-        self._t2v = WanPipeline.from_pretrained(self.info.model_id, vae=vae, dtype=torch.bfloat16)
-        # Shares every module with _t2v, so no extra memory.
-        self._i2v = WanImageToVideoPipeline.from_pipe(self._t2v)
-        if not settings.cpu_offload:
-            self._t2v.to("cuda")
+        return WanPipeline, WanImageToVideoPipeline, {"vae": vae}
+
+    def _load(self) -> None:
+        import torch
+
+        t2v_cls, i2v_cls, kwargs = self._pipelines()
+        if "t2v" in self.info.modes:
+            self._t2v = t2v_cls.from_pretrained(self.info.model_id, dtype=torch.bfloat16, **kwargs)
+            if "i2v" in self.info.modes:
+                # Shares every module with _t2v, so no extra memory.
+                self._i2v = i2v_cls.from_pipe(self._t2v)
+        else:
+            self._i2v = i2v_cls.from_pretrained(self.info.model_id, dtype=torch.bfloat16, **kwargs)
+        if not self.offload:
+            (self._t2v or self._i2v).to("cuda")
+
+    def unload(self) -> None:
+        import gc
+
+        import torch
+
+        self._t2v = self._i2v = None
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    def _run(self, pipe: Any, kwargs: dict[str, Any], guidance_scale: float, tick: Callable[[int], None]) -> Any:
+        def on_step(_pipe: Any, i: int, _t: Any, callback_kwargs: dict) -> dict:
+            tick(i + 1)
+            return callback_kwargs
+
+        return pipe(**kwargs, guidance_scale=guidance_scale, callback_on_step_end=on_step).frames[0]
 
     def generate(
         self,
@@ -83,42 +115,44 @@ class WanTI2VAdapter:
             kwargs["image"] = img.resize((width, height))
 
         seed = random.randrange(2**32) if seed is None else seed
-        if self._t2v is None:
+        if not self.loaded:
+            if WanAdapter._active not in (None, self):
+                report(phase="unloading previous model")
+                WanAdapter._active.unload()
             report(phase="loading model")
             self._load()
+            WanAdapter._active = self
         pipe = self._i2v if image is not None else self._t2v
-        if settings.cpu_offload:
-            # Both pipelines share modules; re-hook them for the one about to run.
+        if self.offload:
+            # TI2V's two pipelines share modules; re-hook them for the one about to run.
             pipe.enable_model_cpu_offload()
 
         start = time.time()
 
-        def on_step(_pipe: Any, i: int, _t: Any, callback_kwargs: dict) -> dict:
-            done = i + 1
+        def tick(done: int) -> None:
             eta = (time.time() - start) / done * (steps - done)
             report(phase="denoising", step=done, total_steps=steps, eta_seconds=round(eta, 1))
-            return callback_kwargs
 
         report(phase="denoising", step=0, total_steps=steps, eta_seconds=None)
         torch.cuda.reset_peak_memory_stats()
-        frames = pipe(
+        kwargs.update(
             prompt=prompt,
             negative_prompt=negative_prompt,
             height=height,
             width=width,
             num_frames=num_frames,
             num_inference_steps=steps,
-            guidance_scale=guidance_scale,
             generator=torch.Generator("cpu").manual_seed(seed),
-            callback_on_step_end=on_step,
-            **kwargs,
-        ).frames[0]
+        )
+        frames = self._run(pipe, kwargs, guidance_scale, tick)
         denoise_seconds = time.time() - start
         peak_vram_mb = torch.cuda.max_memory_allocated() // 2**20
 
         report(phase="encoding video")
         path = settings.outputs_dir / f"{uuid.uuid4().hex}.mp4"
         export_to_video(frames, str(path), fps=fps)
+        # Read the size back: some pipelines pick their own (HunyuanVideo 1.5 image-to-video).
+        height, width = frames[0].shape[:2]
         return {
             "video_url": f"/outputs/{path.name}",
             "file_size_bytes": path.stat().st_size,
@@ -134,9 +168,44 @@ class WanTI2VAdapter:
         }
 
 
+class HunyuanVideo15Adapter(WanAdapter):
+    """HunyuanVideo 1.5: separate checkpoints for text-to-video and image-to-video."""
+
+    def _pipelines(self) -> tuple[Any, Any, dict[str, Any]]:
+        from diffusers import HunyuanVideo15ImageToVideoPipeline, HunyuanVideo15Pipeline
+
+        return HunyuanVideo15Pipeline, HunyuanVideo15ImageToVideoPipeline, {}
+
+    def _load(self) -> None:
+        super()._load()
+        (self._t2v or self._i2v).vae.enable_tiling()
+
+    def _run(self, pipe: Any, kwargs: dict[str, Any], guidance_scale: float, tick: Callable[[int], None]) -> Any:
+        if "image" in kwargs:
+            # The image-to-video pipeline sizes the video from the image itself.
+            del kwargs["height"], kwargs["width"]
+        # No guidance_scale or step callback in this pipeline: set the guider, count scheduler steps.
+        pipe.guider.guidance_scale = guidance_scale
+        sched, done = pipe.scheduler, 0
+
+        def step(*args: Any, **kw: Any) -> Any:
+            nonlocal done
+            out = type(sched).step(sched, *args, **kw)
+            done += 1
+            tick(done)
+            return out
+
+        sched.step = step
+        try:
+            return pipe(**kwargs).frames[0]
+        finally:
+            del sched.step
+
+
 ADAPTERS = {
     "diffusers_image": DiffusersImageAdapter,
-    "wan_ti2v": WanTI2VAdapter,
+    "wan": WanAdapter,
+    "hunyuan_video15": HunyuanVideo15Adapter,
 }
 
 

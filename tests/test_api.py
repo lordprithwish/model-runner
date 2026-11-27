@@ -10,7 +10,8 @@ def test_api():
     with TestClient(app) as client:
         assert client.get("/").json() == {"message": "Hello from Model Runner"}
         assert client.get("/health").json() == {"status": "ok"}
-        assert {m["id"] for m in client.get("/v1/models").json()} == {"sdxl-placeholder", "wan2.2-ti2v-5b"}
+        models = {m["id"] for m in client.get("/v1/models").json()}
+        assert models == {"sdxl-placeholder", "wan2.2-ti2v-5b", "wan2.2-t2v-a14b", "wan2.2-i2v-a14b", "hunyuanvideo-1.5-720p-t2v", "hunyuanvideo-1.5-720p-i2v"}
 
         assert client.post("/v1/generate/image", json={"prompt": "x"}).status_code == 503
         assert client.post("/v1/generate/image", json={"prompt": "x", "model": "nope"}).status_code == 404
@@ -20,6 +21,10 @@ def test_api():
         # Rejected by validation before the (GPU-only) model is touched.
         assert client.post("/v1/generate/video", json={"prompt": "x", "width": 1000}).status_code == 422
         assert client.post("/v1/generate/video", json={"prompt": "x", "image": "a"}).status_code == 422
+        # Single-mode models reject the wrong input before queueing ("eA==" is base64 for "x").
+        assert client.post("/v1/generate/video", json={"prompt": "x", "model": "wan2.2-i2v-a14b"}).status_code == 400
+        r = client.post("/v1/generate/video", json={"prompt": "x", "model": "wan2.2-t2v-a14b", "image": "eA=="})
+        assert r.status_code == 400 and "does not accept" in r.json()["detail"]
 
         assert client.get("/v1/jobs/nope").status_code == 404
 
@@ -38,7 +43,7 @@ def test_api():
         assert [j["id"] for j in client.get("/v1/jobs?status=failed").json()] == [job["id"]]
         stats = client.get("/v1/stats").json()
         assert stats["queue"]["failed"] == 1 and stats["queue"]["total"] == 1
-        assert {m["id"]: m["loaded"] for m in stats["models"]} == {"sdxl-placeholder": False, "wan2.2-ti2v-5b": False}
+        assert {m["id"]: m["loaded"] for m in stats["models"]} == dict.fromkeys(models, False)
         for section in stats:
             assert client.get(f"/v1/stats/{section}").status_code == 200
         assert client.get("/v1/stats/nope").status_code == 422

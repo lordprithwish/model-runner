@@ -18,6 +18,11 @@ def list_models():
 def _submit(request: BaseModel, task: str) -> dict:
     # Model problems (unknown/disabled/wrong task) fail here, before queueing.
     adapter = registry.resolve(request.model, task)
+    if task == "video":
+        mode = "i2v" if request.image is not None else "t2v"
+        if mode not in adapter.info.modes:
+            need = "requires `image`" if mode == "t2v" else "does not accept `image`"
+            raise HTTPException(400, f"Model {adapter.info.id} {need}")
     # dict(), not model_dump(): model_dump re-encodes Base64Bytes back to base64.
     job_id = jobs.submit(adapter, {k: v for k, v in dict(request).items() if k != "model"})
     return jobs.get(job_id)

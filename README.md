@@ -6,9 +6,14 @@ Jobs go into a queue, and a single worker runs them one at a time on the GPU.
 | Model id | Task | Status |
 |---|---|---|
 | `wan2.2-ti2v-5b` | text-to-video, or image-to-video when you send `image` | enabled |
+| `wan2.2-t2v-a14b` | text-to-video (14B MoE, always CPU-offloaded, needs ~80 GB RAM) | enabled |
+| `wan2.2-i2v-a14b` | image-to-video, `image` required (14B MoE, same as above) | enabled |
+| `hunyuanvideo-1.5-720p-t2v` | text-to-video (8.3B) | enabled |
+| `hunyuanvideo-1.5-720p-i2v` | image-to-video, `image` required (8.3B) | enabled |
 | `sdxl-placeholder` | image | disabled (stub, not implemented yet) |
 
-Models are listed in [config/models.yaml](config/models.yaml).
+Models are listed in [config/models.yaml](config/models.yaml). Weights download on a model's first job.
+Only one video model stays loaded: a job for a different model unloads the previous one first.
 
 ---
 
@@ -407,7 +412,7 @@ Error codes:
 |---|---|
 | `422` | Invalid input |
 | `404` | Unknown model or job |
-| `400` | The model doesn't do that task (e.g. a video model on `/generate/image`) |
+| `400` | The model doesn't do that task (e.g. a video model on `/generate/image`), or `image` is missing for an image-to-video-only model / sent to a text-to-video-only model |
 | `503` | The model is disabled in `config/models.yaml` |
 
 ---

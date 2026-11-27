@@ -36,4 +36,8 @@ class ModelInfo(BaseModel):
     adapter: str
     enabled: bool = False
     model_id: str = ""
+    # Video only: t2v = text-to-video, i2v = image-to-video.
+    modes: list[Literal["t2v", "i2v"]] = ["t2v", "i2v"]
+    # None = use the global CPU_OFFLOAD setting.
+    cpu_offload: bool | None = None
     notes: str = ""

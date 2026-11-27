@@ -7,10 +7,55 @@ models:
     model_id: ""
     notes: "Replace with a supported image model/pipeline."
 
+  # modes: t2v = text-to-video (no `image`), i2v = image-to-video (`image` required).
+  # cpu_offload: overrides CPU_OFFLOAD for this model only.
+
   - id: wan2.2-ti2v-5b
     name: Wan2.2 TI2V 5B
     task: video
-    adapter: wan_ti2v
+    adapter: wan
     enabled: true
     model_id: Wan-AI/Wan2.2-TI2V-5B-Diffusers
+    modes: [t2v, i2v]
     notes: "Text-to-video, or image-to-video when `image` is sent. 720p (1280x704), 121 frames @ 24fps."
+
+  - id: wan2.2-t2v-a14b
+    name: Wan2.2 T2V A14B
+    task: video
+    adapter: wan
+    enabled: true
+    model_id: Wan-AI/Wan2.2-T2V-A14B-Diffusers
+    modes: [t2v]
+    # Two 14B experts (~57 GB bf16) don't fit a 48 GB GPU; offload keeps one on the GPU at a time. Needs ~80 GB system RAM.
+    cpu_offload: true
+    notes: "Text-to-video only. 480p (832x480) or 720p (1280x720). Trained at 81 frames @ 16fps; suggested steps 40, guidance_scale 4."
+
+  - id: wan2.2-i2v-a14b
+    name: Wan2.2 I2V A14B
+    task: video
+    adapter: wan
+    enabled: true
+    model_id: Wan-AI/Wan2.2-I2V-A14B-Diffusers
+    modes: [i2v]
+    cpu_offload: true
+    notes: "Image-to-video only (`image` required). 480p or 720p. Trained at 81 frames @ 16fps; suggested steps 40, guidance_scale 3.5."
+
+  # 480p and distilled (fewer steps) variants: swap model_id for
+  # hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-{480p_t2v,480p_t2v_distilled,480p_i2v,720p_i2v_distilled,...}
+  - id: hunyuanvideo-1.5-720p-t2v
+    name: HunyuanVideo 1.5 T2V 720p
+    task: video
+    adapter: hunyuan_video15
+    enabled: true
+    model_id: hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v
+    modes: [t2v]
+    notes: "Text-to-video only. 8.3B. 720p, 121 frames @ 24fps; default guidance_scale 6."
+
+  - id: hunyuanvideo-1.5-720p-i2v
+    name: HunyuanVideo 1.5 I2V 720p
+    task: video
+    adapter: hunyuan_video15
+    enabled: true
+    model_id: hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_i2v
+    modes: [i2v]
+    notes: "Image-to-video only (`image` required). Output size follows the image; width/height are ignored."
