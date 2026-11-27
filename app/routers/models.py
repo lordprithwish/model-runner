@@ -24,7 +24,8 @@ def _submit(request: BaseModel, task: str) -> dict:
             need = "requires `image`" if mode == "t2v" else "does not accept `image`"
             raise HTTPException(400, f"Model {adapter.info.id} {need}")
     # dict(), not model_dump(): model_dump re-encodes Base64Bytes back to base64.
-    job_id = jobs.submit(adapter, {k: v for k, v in dict(request).items() if k != "model"})
+    # `seconds` is already folded into num_frames by the schema.
+    job_id = jobs.submit(adapter, {k: v for k, v in dict(request).items() if k not in ("model", "seconds")})
     return jobs.get(job_id)
 
 

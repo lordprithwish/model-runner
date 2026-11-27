@@ -21,6 +21,12 @@ def test_api():
         # Rejected by validation before the (GPU-only) model is touched.
         assert client.post("/v1/generate/video", json={"prompt": "x", "width": 1000}).status_code == 422
         assert client.post("/v1/generate/video", json={"prompt": "x", "image": "a"}).status_code == 422
+        # Frame count: seconds wins, snapped to 4k+1, capped at MAX_FRAMES.
+        from app.schemas import GenerateVideoRequest as V
+
+        assert V(prompt="x", seconds=5).num_frames == 121 and V(prompt="x", seconds=5, fps=16).num_frames == 81
+        assert V(prompt="x", num_frames=100).num_frames == 101
+        assert client.post("/v1/generate/video", json={"prompt": "x", "seconds": 60}).status_code == 422
         # Single-mode models reject the wrong input before queueing ("eA==" is base64 for "x").
         assert client.post("/v1/generate/video", json={"prompt": "x", "model": "wan2.2-i2v-a14b"}).status_code == 400
         r = client.post("/v1/generate/video", json={"prompt": "x", "model": "wan2.2-t2v-a14b", "image": "eA=="})

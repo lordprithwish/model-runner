@@ -60,6 +60,7 @@ cp .env.example .env
 | `OUTPUTS_DIR` | `outputs` | Where generated videos are written; also served at `/outputs/...` |
 | `DEFAULT_IMAGE_MODEL` | `sdxl-placeholder` | Used when an image request has no `model` |
 | `DEFAULT_VIDEO_MODEL` | `wan2.2-ti2v-5b` | Used when a video request has no `model` |
+| `MAX_FRAMES` | `241` | Longest video a request may ask for (241 = 10 s at 24 fps). Longer = more memory, much more time, and lower quality past the models' 81–121 training length |
 | `CPU_OFFLOAD` | `true` | Moves model parts between CPU and GPU so it fits on 24 GB. Set it to `false` on 40 GB+ GPUs. |
 | `HF_HOME` | `~/.cache/huggingface` | (Hugging Face setting) Where model weights are downloaded |
 
@@ -399,8 +400,9 @@ Video request fields ([app/schemas.py](app/schemas.py)):
 | `negative_prompt` | none | ≤ 10,000 characters |
 | `model` | `DEFAULT_VIDEO_MODEL` | |
 | `image` | none | base64; send it for image-to-video |
-| `num_frames` | 121 | 5–121 |
+| `num_frames` | 121 | 5–`MAX_FRAMES` (241). Rounded to the nearest 4k+1 (…, 81, 85, …, 121) |
 | `fps` | 24 | 1–60 |
+| `seconds` | | Instead of `num_frames`: `seconds × fps + 1` frames, then rounded the same way. Wins over `num_frames` |
 | `width` × `height` | 1280 × 704 | 256–1280, multiples of 32 |
 | `steps` | 50 | 1–100 |
 | `guidance_scale` | 5.0 | 1–20 |
